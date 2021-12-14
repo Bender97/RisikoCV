@@ -14,6 +14,8 @@ using namespace cv::xfeatures2d;
 
 std::string rect_map = "/home/fusy/Documents/risiko/imgs/rect_map.jpg";
 std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110513.jpg";
+//std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110540.jpg"; // difficult: map is not well localized
+std::string india_map = "/home/fusy/Documents/risiko/imgs/rect_map_india.jpg";
 
 class Match {
 
@@ -22,6 +24,8 @@ public:
 
         Mat img_object = imread( rect_map, IMREAD_GRAYSCALE );
         Mat img_scene = imread( test_map, IMREAD_GRAYSCALE );
+        Mat india = imread( india_map, IMREAD_GRAYSCALE );
+
         if ( img_object.empty() || img_scene.empty() )
         {
             cout << "Could not open or find the image!\n" << endl;
@@ -71,6 +75,12 @@ public:
         obj_corners[3] = Point2f( 0, (float)img_object.rows );
         std::vector<Point2f> scene_corners(4);
         perspectiveTransform( obj_corners, scene_corners, H);
+
+//        Mat map = img_scene.clone();
+//        Mat mask = Mat::zeros( img_scene.rows, img_scene.cols, img_scene.type() );
+//        Mat warp_mat = getAffineTransform( obj_corners.data(), scene_corners.data() );
+//        warpAffine( india, mask, warp_mat, india.size() );
+
         //-- Draw lines between the corners (the mapped object in the scene - image_2 )
         line( img_matches, scene_corners[0] + Point2f((float)img_object.cols, 0),
               scene_corners[1] + Point2f((float)img_object.cols, 0), Scalar(0, 255, 0), 4 );
@@ -83,9 +93,31 @@ public:
         //-- Show detected matches
 
         cv::resize(img_matches, img_matches, cv::Size(img_matches.cols/2, img_matches.rows/2));
-
         imshow("Good Matches & Object detection", img_matches );
         waitKey();
+
+        cv::Mat projected = img_scene.clone();
+
+        for (int r = 0; r<india.rows; r++) {
+            for (int c=0; c<india.cols; c++) {
+                if (india.at<uchar>(r, c) == 0) {
+                    std::vector<Point2f> camera_corners;
+                    Point2f p(c, r);
+                    camera_corners.push_back(p);
+                    std::vector<Point2f> world_corners;
+                    perspectiveTransform(camera_corners, world_corners, H);
+                    projected.at<uchar>((int) world_corners[0].y, (int) world_corners[0].x) = 255;
+                }
+
+            }
+        }
+
+        cv::resize(projected, projected, cv::Size(projected.cols/2, projected.rows/2));
+        imshow("second", projected );
+        waitKey();
+    //        cv::resize(mask, mask, cv::Size(mask.cols/2, mask.rows/2));
+    //        imshow("second", mask );
+    //        waitKey();
         return;
     }
 
