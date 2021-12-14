@@ -16,11 +16,13 @@ class Match {
 
 
     std::string rect_map = "/home/fusy/Documents/risiko/imgs/rect_map.jpg";
-    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110943.jpg";        // india has 2
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110513.jpg";        // india has 0
-//    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110627.jpg";          // india has 1
+//    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg";          // india has 1
+//    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110738.jpg";        // india has 2
+    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110927.jpg";        // india has 2
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110540.jpg"; // difficult: map is not well localized
-    std::string india_map = "/home/fusy/Documents/risiko/imgs/rect_map_india.jpg";
+    std::string india_map = "/home/fusy/Documents/risiko/imgs/rect_map_africadelnord.jpg";
+//    std::string india_map = "/home/fusy/Documents/risiko/imgs/rect_map_india.jpg";
     Mat img_object;
     Mat img_scene;
     Mat img_scene_color;
@@ -114,8 +116,8 @@ public:
         findMatches();
 
         //-- Draw matches
-        drawMatches( img_object, keypoints_object, img_scene, keypoints_scene, good_matches, img_matches, Scalar::all(-1),
-                     Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+//        drawMatches( img_object, keypoints_object, img_scene, keypoints_scene, good_matches, img_matches, Scalar::all(-1),
+//                     Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
         //-- Localize the object
         H = findHomography( obj, scene, RANSAC );
 
@@ -126,39 +128,57 @@ public:
         scene_corners.resize(4);
         perspectiveTransform( obj_corners, scene_corners, H);
 
-        drawLines();
-
-        //-- Show detected matches
-        cv::resize(img_matches, img_matches, cv::Size(img_matches.cols/2, img_matches.rows/2));
-        imshow("Good Matches & Object detection", img_matches );
-        waitKey();
+//        drawLines();
+//
+//        //-- Show detected matches
+//        cv::resize(img_matches, img_matches, cv::Size(img_matches.cols/2, img_matches.rows/2));
+//        imshow("Good Matches & Object detection", img_matches );
+//        waitKey();
 
 
 
 
         Mat th;
+        Mat th_copy;
         Mat img_scene_hsv;
         cvtColor(img_scene_color, img_scene_hsv, COLOR_BGR2HSV);
         inRange(img_scene_hsv, Scalar(110, 142, 68), Scalar(141, 255, 255), th);
-        cv::resize(th, th, cv::Size(th.cols/2, th.rows/2));
-        imshow("thresholded", th );
-        waitKey();
+
+        int dilate_size = 4;
+
+        Mat element = getStructuringElement( MORPH_RECT,
+                                             Size( 2*dilate_size + 1, 2*dilate_size+1 ),
+                                             Point( dilate_size, dilate_size ) );
+        dilate( th, th, element );
+
+
+        cv::resize(th, th_copy, cv::Size(th.cols/2, th.rows/2));
+        imshow("thresholded", th_copy );
+//        waitKey();
 
 
 
         cv::Mat projected = img_scene.clone();
+        cv::Mat black = Mat::zeros(projected.rows, projected.cols, CV_8UC1);
 
         size_t pix_cont = 0;
+
+        size_t original_india_area = 0;
+        size_t project_india_area = 0;
 
         for (int r = 0; r<india.rows; r++) {
             for (int c=0; c<india.cols; c++) {
                 if (india.at<uchar>(r, c) == 0) {
+                    original_india_area++;
                     std::vector<Point2f> camera_corners;
                     Point2f p(c, r);
                     camera_corners.push_back(p);
                     std::vector<Point2f> world_corners;
                     perspectiveTransform(camera_corners, world_corners, H);
+
                     projected.at<uchar>((int) world_corners[0].y, (int) world_corners[0].x) = 255;
+                    black.at<uchar>((int) world_corners[0].y, (int) world_corners[0].x) = 255;
+
                     if (th.at<uchar>((int) world_corners[0].y, (int) world_corners[0].x)==255) {
                         pix_cont++;
                     }
@@ -167,11 +187,29 @@ public:
             }
         }
 
+        for (int r = 0; r<black.rows; r++) {
+            for (int c = 0; c < black.cols; c++) {
+                if (black.at<uchar>(r, c) == 255) {
+                    project_india_area++;
+                }
+            }
+        }
+
         cout << "PIX_CONT: " << pix_cont << endl;
+        cout << "origin_area: " << original_india_area << endl;
+        cout << "projec_area: " << project_india_area << endl;
+
+        cout << "ratio: " << (float)pix_cont/project_india_area << endl;
 
         cv::resize(projected, projected, cv::Size(projected.cols/2, projected.rows/2));
         imshow("second", projected );
-        waitKey();
+       while(true){
+           char key = (char) waitKey(30);
+           if (key == 'q' || key == 27)
+           {
+               break;
+           }
+       }
     }
 
 };
