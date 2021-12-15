@@ -19,7 +19,9 @@ class Match {
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110513.jpg";        // india has 0
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg";          // india has 1
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110738.jpg";        // india has 2
-    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110927.jpg";        // india has 2
+    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg";        // africadelnord has 1
+//    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110800.jpg";        // africadelnord has 3
+//    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110943.jpg";        // africadelnord has 4
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110540.jpg"; // difficult: map is not well localized
     std::string india_map = "/home/fusy/Documents/risiko/imgs/rect_map_africadelnord.jpg";
 //    std::string india_map = "/home/fusy/Documents/risiko/imgs/rect_map_india.jpg";
@@ -42,18 +44,6 @@ class Match {
     std::vector<Point2f> obj_corners;
     std::vector<Point2f> scene_corners;
 
-    void loadImages() {
-        img_object = imread( rect_map, IMREAD_GRAYSCALE );
-        img_scene = imread( test_map, IMREAD_GRAYSCALE );
-        img_scene_color = imread( test_map, IMREAD_COLOR );
-        india = imread( india_map, IMREAD_GRAYSCALE );
-
-        if ( img_object.empty() || img_scene.empty() )
-        {
-            cout << "Could not open or find the image!\n" << endl;
-            return ;
-        }
-    }
 
     void loadKeypointsAndDescriptors() {
         int minHessian = 400;
@@ -104,9 +94,18 @@ class Match {
     }
 
 public:
-    Match() {
+    Match(std::string scenepath, std::string objpath) {
 
-        loadImages();
+        img_object = imread( rect_map, IMREAD_GRAYSCALE );
+        img_scene = imread( scenepath, IMREAD_GRAYSCALE );
+        img_scene_color = imread( scenepath, IMREAD_COLOR );
+        india = imread( objpath, IMREAD_GRAYSCALE );
+
+        if ( img_object.empty() || img_scene.empty() )
+        {
+            cout << "Could not open or find the image!\n" << endl;
+            return ;
+        }
 
         //-- Step 1: Detect the keypoints using SURF Detector, compute the descriptors
         loadKeypointsAndDescriptors();
@@ -138,71 +137,86 @@ public:
 
 
 
-        Mat th;
+        Mat thresholded_img;
         Mat th_copy;
         Mat img_scene_hsv;
         cvtColor(img_scene_color, img_scene_hsv, COLOR_BGR2HSV);
-        inRange(img_scene_hsv, Scalar(110, 142, 68), Scalar(141, 255, 255), th);
+//        inRange(img_scene_hsv, Scalar(108, 125, 38), Scalar(137, 233, 223), th);
+        inRange(img_scene_hsv, Scalar(100, 135, 97), Scalar(145, 255, 215), thresholded_img);
 
         int dilate_size = 4;
 
         Mat element = getStructuringElement( MORPH_RECT,
                                              Size( 2*dilate_size + 1, 2*dilate_size+1 ),
                                              Point( dilate_size, dilate_size ) );
-        dilate( th, th, element );
+        dilate( thresholded_img, thresholded_img, element );
 
+        thresholded_img = 255- thresholded_img;
 
-        cv::resize(th, th_copy, cv::Size(th.cols/2, th.rows/2));
-        imshow("thresholded", th_copy );
-//        waitKey();
-
+//        cv::resize(th, th_copy, cv::Size(th.cols/2, th.rows/2));
+//        imshow("thresholded", th_copy );
 
 
         cv::Mat projected = img_scene.clone();
-        cv::Mat black = Mat::zeros(projected.rows, projected.cols, CV_8UC1);
+        cv::Mat state_projected_mask = Mat::zeros(projected.rows, projected.cols, CV_8UC1);
 
         size_t pix_cont = 0;
 
-        size_t original_india_area = 0;
-        size_t project_india_area = 0;
+        size_t original_india_area = india.rows*india.cols;
+        size_t projected_state_area = 0;
+
+        cv::Mat armies_projected_mask = Mat::zeros(projected.rows, projected.cols, CV_8UC1);
 
         for (int r = 0; r<india.rows; r++) {
             for (int c=0; c<india.cols; c++) {
-                if (india.at<uchar>(r, c) == 0) {
-                    original_india_area++;
+                if (india.at<uchar>(r, c) == 255) {
+
                     std::vector<Point2f> camera_corners;
                     Point2f p(c, r);
                     camera_corners.push_back(p);
                     std::vector<Point2f> world_corners;
                     perspectiveTransform(camera_corners, world_corners, H);
+                    int x_proj = (int) world_corners[0].x;
+                    int y_proj = (int) world_corners[0].y;
 
-                    projected.at<uchar>((int) world_corners[0].y, (int) world_corners[0].x) = 255;
-                    black.at<uchar>((int) world_corners[0].y, (int) world_corners[0].x) = 255;
+                    projected.at<uchar>(y_proj, x_proj) = 0;                // annerisci lo stato sulla mappa colorata (grayscale)
+                    state_projected_mask.at<uchar>(y_proj, x_proj) = 255;   // segna lo stato in prospettiva sulla rispettiva maschera vuota
 
-                    if (th.at<uchar>((int) world_corners[0].y, (int) world_corners[0].x)==255) {
-                        pix_cont++;
+                    if (thresholded_img.at<uchar>(y_proj, x_proj) ==0 ) {           // if an army was found by thresholding
+                        armies_projected_mask.at<uchar>(y_proj, x_proj) = 120;      // segna l'army in prospettiva sulla rispettiva maschera vuota
+                        projected.at<uchar>(y_proj, x_proj) = 120;                  // segna in grigio lo stato sulla mappa colorata (per bellezza)
                     }
                 }
 
             }
         }
 
-        for (int r = 0; r<black.rows; r++) {
-            for (int c = 0; c < black.cols; c++) {
-                if (black.at<uchar>(r, c) == 255) {
-                    project_india_area++;
-                }
+        for (int r = 0; r<state_projected_mask.rows; r++) {
+            for (int c = 0; c < state_projected_mask.cols; c++) {
+                if (state_projected_mask.at<uchar>(r, c)  == 255 ) projected_state_area++;
+                if (armies_projected_mask.at<uchar>(r, c) == 120 ) pix_cont++;
             }
         }
 
         cout << "PIX_CONT: " << pix_cont << endl;
-        cout << "origin_area: " << original_india_area << endl;
-        cout << "projec_area: " << project_india_area << endl;
+        cout << "original_state_area : " << original_india_area << endl;
+        cout << "projected_state_area: " << projected_state_area << endl;
 
-        cout << "ratio: " << (float)pix_cont/project_india_area << endl;
+        cout << "ratio: " << (float) (pix_cont)/(projected_state_area) << std::endl;
+
+//        float k = 403;
+//
+//        cout << "num_armies: " << (float)pix_cont/k << endl;
+
+
+        cv::resize(armies_projected_mask, armies_projected_mask, cv::Size(armies_projected_mask.cols/2, armies_projected_mask.rows/2));
+        imshow("armies_projected_mask", armies_projected_mask );
 
         cv::resize(projected, projected, cv::Size(projected.cols/2, projected.rows/2));
-        imshow("second", projected );
+        imshow("projected", projected );
+
+        cv::resize(state_projected_mask, state_projected_mask, cv::Size(state_projected_mask.cols/2, state_projected_mask.rows/2));
+        imshow("state_projected_mask", state_projected_mask );
        while(true){
            char key = (char) waitKey(30);
            if (key == 'q' || key == 27)
@@ -216,7 +230,11 @@ public:
 
 int main(int argc, char** argv) {
 
-    Match m;
+    std::string object_path = "/home/fusy/Documents/risiko/imgs/rect_map_india.jpg";
+
+    Match m1("/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg", object_path);        // africadelnord has 1
+    Match m3("/home/fusy/Documents/risiko/imgs/IMG_20211214_110800.jpg", object_path);        // africadelnord has 3
+    Match m4("/home/fusy/Documents/risiko/imgs/IMG_20211214_110943.jpg", object_path);        // africadelnord has 4);
 
     return 0;
 }
