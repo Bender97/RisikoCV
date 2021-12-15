@@ -18,8 +18,8 @@ class Match {
     std::string rect_map = "/home/fusy/Documents/risiko/imgs/rect_map.jpg";
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110513.jpg";        // india has 0
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg";          // india has 1
-//    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110738.jpg";        // india has 2
-    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg";        // africadelnord has 1
+    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110738.jpg";        // india has 2
+//    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg";        // africadelnord has 1
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110800.jpg";        // africadelnord has 3
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110943.jpg";        // africadelnord has 4
 //    std::string test_map = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110540.jpg"; // difficult: map is not well localized
@@ -44,6 +44,7 @@ class Match {
     std::vector<Point2f> obj_corners;
     std::vector<Point2f> scene_corners;
 
+    cv::Mat armies_projected_mask;
 
     void loadKeypointsAndDescriptors() {
         int minHessian = 400;
@@ -165,7 +166,7 @@ public:
         size_t original_india_area = india.rows*india.cols;
         size_t projected_state_area = 0;
 
-        cv::Mat armies_projected_mask = Mat::zeros(projected.rows, projected.cols, CV_8UC1);
+        armies_projected_mask = Mat::zeros(projected.rows, projected.cols, CV_8UC1);
 
         for (int r = 0; r<india.rows; r++) {
             for (int c=0; c<india.cols; c++) {
@@ -183,7 +184,7 @@ public:
                     state_projected_mask.at<uchar>(y_proj, x_proj) = 255;   // segna lo stato in prospettiva sulla rispettiva maschera vuota
 
                     if (thresholded_img.at<uchar>(y_proj, x_proj) ==0 ) {           // if an army was found by thresholding
-                        armies_projected_mask.at<uchar>(y_proj, x_proj) = 120;      // segna l'army in prospettiva sulla rispettiva maschera vuota
+                        armies_projected_mask.at<uchar>(y_proj, x_proj) = 255;      // segna l'army in prospettiva sulla rispettiva maschera vuota
                         projected.at<uchar>(y_proj, x_proj) = 120;                  // segna in grigio lo stato sulla mappa colorata (per bellezza)
                     }
                 }
@@ -194,7 +195,7 @@ public:
         for (int r = 0; r<state_projected_mask.rows; r++) {
             for (int c = 0; c < state_projected_mask.cols; c++) {
                 if (state_projected_mask.at<uchar>(r, c)  == 255 ) projected_state_area++;
-                if (armies_projected_mask.at<uchar>(r, c) == 120 ) pix_cont++;
+                if (armies_projected_mask.at<uchar>(r, c) == 255 ) pix_cont++;
             }
         }
 
@@ -226,15 +227,55 @@ public:
        }
     }
 
+    void pipeline2() {
+        Mat thresholded_img;
+        Mat th_copy;
+        Mat img_scene_hsv;
+        int erode_size = 1;
+//        cvtColor(img_scene_color, img_scene_hsv, COLOR_BGR2HSV);
+////        inRange(img_scene_hsv, Scalar(108, 125, 38), Scalar(137, 233, 223), th);
+//        inRange(img_scene_hsv, Scalar(107, 142, 68), Scalar(141, 255, 255), thresholded_img);
+//        Mat element = getStructuringElement( MORPH_RECT,
+//                                             Size( 2*erode_size + 1, 2*erode_size+1 ),
+//                                             Point( erode_size, erode_size ) );
+//        erode( thresholded_img, thresholded_img, element );
+        thresholded_img = armies_projected_mask.clone();
+
+        Mat thresh;
+        threshold(thresholded_img, thresh, 0, 255, THRESH_OTSU + THRESH_BINARY);
+        Mat kernel = getStructuringElement( MORPH_ELLIPSE, cv::Size(3,3));
+        Mat opening;
+        morphologyEx(thresh, opening,  MORPH_OPEN, kernel, Point( -1, -1 ), 5);
+        vector<vector<Point> > contours;
+        vector<Vec4i> hierarchy;
+        findContours( opening, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE );
+
+        cout << "BLOBS: " << contours.size() << endl;
+
+        cvtColor(opening, opening, COLOR_GRAY2BGR);
+        for( size_t i = 0; i< contours.size(); i++ )
+        {
+            drawContours( opening, contours, (int)i, Scalar(0, 0, 255), 2, LINE_8, hierarchy, 0 );
+        }
+
+        resize(opening, opening, cv::Size(opening.cols/2, opening.rows/2));
+
+        imshow("thresholded_img", opening);
+        waitKey(0);
+    }
+
 };
+
 
 int main(int argc, char** argv) {
 
     std::string object_path = "/home/fusy/Documents/risiko/imgs/rect_map_india.jpg";
 
-    Match m1("/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg", object_path);        // africadelnord has 1
+//    Match m1("/home/fusy/Documents/risiko/imgs/IMG_20211214_110720.jpg", object_path);        // africadelnord has 1
     Match m3("/home/fusy/Documents/risiko/imgs/IMG_20211214_110800.jpg", object_path);        // africadelnord has 3
-    Match m4("/home/fusy/Documents/risiko/imgs/IMG_20211214_110943.jpg", object_path);        // africadelnord has 4);
+//    Match m4("/home/fusy/Documents/risiko/imgs/IMG_20211214_110943.jpg", object_path);        // africadelnord has 4);
+
+    m3.pipeline2();
 
     return 0;
 }
