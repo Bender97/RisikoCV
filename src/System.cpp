@@ -1,5 +1,6 @@
 
 #include <iostream>
+#include <map>
 #include "opencv2/core.hpp"
 #include "opencv2/calib3d.hpp"
 #include "opencv2/highgui.hpp"
@@ -35,6 +36,10 @@ class System {
     // data for blobbing the armies in the scene
     Mat armies_in_scene_mask;
     Mat armies_in_state_mask;
+
+
+
+
 
     void loadImage(std::string &path, cv::Mat &img, ImreadModes mode ) {
         img = imread( path, mode );
@@ -73,9 +78,9 @@ class System {
         Mat temp;
         cvtColor(scene_color, temp, COLOR_BGR2HSV);
 //        inRange(img_scene_hsv, Scalar(108, 125, 38), Scalar(137, 233, 223), th);
-        inRange(temp, Scalar(110, 135, 95), Scalar(145, 255, 220), temp);
+        inRange(temp, Scalar(107, 135, 45), Scalar(145, 255, 255), temp);
 
-        int dilate_size = 3;
+        int dilate_size = 1;
 
         Mat element = getStructuringElement( MORPH_RECT,
                                              Size( 2*dilate_size + 1, 2*dilate_size+1 ),
@@ -93,6 +98,11 @@ class System {
     }
 
 public:
+
+    // contouring
+    std::map<int, vector<vector<Point>>> big;
+    vector<double> single_areas;
+
     System(std::string rectified_map_path, std::string scene_path) {
         loadImage(rectified_map_path, rectified_map, cv::IMREAD_GRAYSCALE);
         loadImage(scene_path, scene_grayscale, IMREAD_GRAYSCALE);
@@ -108,6 +118,7 @@ public:
         H = findHomography( obj_kp, scene_kp, cv::RANSAC );
 
         extractArmiesMaskFromScene();
+//        show(armies_in_scene_mask);
     }
 
     void findMapinScene() {
@@ -189,7 +200,7 @@ public:
         }
     }
 
-    void countArmiesInState(std::string &rectified_state_path) {
+    int countArmiesInState(std::string &rectified_state_path, int idx) {
         getArmiesInState(rectified_state_path);
 
         Mat thresh;
@@ -198,18 +209,43 @@ public:
         Mat opening;
         morphologyEx(thresh, opening,  MORPH_OPEN, kernel, Point( -1, -1 ), 5);
         vector<vector<Point> > contours;
+        vector<vector<Point> > valid_contours;
         vector<Vec4i> hierarchy;
         findContours( opening, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE );
 
-        cout << contours.size() << endl;
+        vector<vector<Point>> lb;
 
-        cvtColor(opening, opening, COLOR_GRAY2BGR);
         for( size_t i = 0; i< contours.size(); i++ )
         {
-            drawContours( opening, contours, (int)i, Scalar(0, 0, 255), 2, LINE_8, hierarchy, 0 );
+            double area = contourArea(contours[i]);
+            if (area > 300) {
+                if (area < 2700) {
+                    valid_contours.push_back(contours[i]);
+                    single_areas.push_back(area);
+                }
+                else {
+                    lb.push_back(contours[i]);
+                }
+            }
         }
 
+        if (lb.size()>0)
+            big.insert(std::pair<int, vector<vector<Point>>>(idx, lb));
+
+        int armies = valid_contours.size();
+//        if (armies>0) {
+//            cout << rectified_state_path.substr(54) << " \t   " << armies << endl;
+//            cout << "AREA: " << contourArea(valid_contours[0]) << endl;
+//        }
+
+//        cvtColor(opening, opening, COLOR_GRAY2BGR);
+//        for( size_t i = 0; i< valid_contours.size(); i++ )
+//        {
+//            drawContours( opening, valid_contours, (int)i, Scalar(0, 0, 255), 2, LINE_8, hierarchy, 0 );
+//        }
+
 //        show(opening);
+        return armies;
     }
 
     void showScene() {
@@ -218,12 +254,7 @@ public:
 
 };
 
-int main(int argc, char **argv) {
-    std::string rectified_map_path = "/home/fusy/Documents/risiko/imgs/rect_map.jpg";
-    std::string scene_path = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110912.jpg";
-    std::string rectified_state_mask = "/home/fusy/Documents/risiko/imgs/rect_map_africadelnord.jpg";
-
-    std::vector<std::string> states;
+void loadPathNames(std::vector<std::string> &states) {
     states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_afghanistan.jpg");
     states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_africadelnord.jpg");
     states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_africadelsud.jpg");
@@ -266,17 +297,59 @@ int main(int argc, char **argv) {
     states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_ucraina.jpg");
     states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_urali.jpg");
     states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_venezuela.jpg");
+}
+
+int main(int argc, char **argv) {
+    std::string rectified_map_path = "/home/fusy/Documents/risiko/imgs/rect_map.jpg";
+    std::string scene_path = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110927.jpg";
+//    std::string scene_path = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110912.jpg";
+
+    std::vector<std::string> states;
+    std::vector<int> armies_per_state;
+    loadPathNames(states);
 
     System s(rectified_map_path, scene_path);
-
-    for (auto state: states) {
-        cout << state.substr(54) << " \t   ";
 //        s.findMapinScene();
-//            s.projectState(state);
-        s.countArmiesInState(state);
+
+    for (int i=0; i<states.size(); i++) {
+//        s.projectState(state);
+        armies_per_state.push_back(s.countArmiesInState(states[i], i));
+
+        cout << "                                    \r";
+        cout << "loading ... " << (i+1) << " / " << states.size() << "\r" << std::flush;
+
     }
 
-    s.showScene();
+
+
+    cout << endl;
+    double sum = 0;
+    for (auto area: s.single_areas) sum += area;
+    double avg = sum / s.single_areas.size();
+    cout << "average area: " << avg << endl;
+
+    for (auto big: s.big) {
+        for (auto big_contour: big.second) {
+            double big_area = contourArea(big_contour);
+            if (big_area>0) {
+                int armies = (int) round(big_area / avg);
+                armies_per_state[big.first] += armies;
+            }
+        }
+
+    }
+
+    cout << endl;
+
+    for (int i=0; i<states.size(); i++) {
+        int armies = armies_per_state[i];
+        if (armies>0)
+            cout << states[i].substr(54) << " " << armies << endl;
+    }
+
+            s.showScene();
+
+
 
     return 0;
 }
