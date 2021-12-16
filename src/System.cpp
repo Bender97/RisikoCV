@@ -1,6 +1,9 @@
 
 #include <iostream>
 #include <map>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <string>
 #include "opencv2/core.hpp"
 #include "opencv2/calib3d.hpp"
 #include "opencv2/highgui.hpp"
@@ -38,6 +41,8 @@ class System {
     Mat armies_in_state_mask;
 
 
+
+    std::vector<std::string> states_path;
 
 
 
@@ -97,11 +102,42 @@ class System {
         waitKey(0);
     }
 
+
+    void loadStatesMasksPaths() {
+        DIR *dir;
+        class dirent *ent;
+        class stat st{};
+        std::string directory = "../imgs/state_masks";
+
+        dir = opendir(directory.c_str());
+        while ((ent = readdir(dir)) != nullptr) {
+            const string file_name = ent->d_name;
+            const string full_file_name = directory + "/" + file_name;
+
+            if (file_name[0] == '.')
+                continue;
+
+            if (stat(full_file_name.c_str(), &st) == -1)
+                continue;
+
+            const bool is_directory = (st.st_mode & S_IFDIR) != 0;
+
+            if (is_directory)
+                continue;
+
+            states_path.push_back(full_file_name);
+        }
+        closedir(dir);
+    }
+
+
 public:
 
     // contouring
-    std::map<int, vector<vector<Point>>> big;
+    std::map<int, vector<vector<Point>>> big_army_areas;
     vector<double> single_areas;
+    double avg_army_area;
+    std::vector<int> armies_per_state;
 
     System(std::string rectified_map_path, std::string scene_path) {
         loadImage(rectified_map_path, rectified_map, cv::IMREAD_GRAYSCALE);
@@ -230,11 +266,11 @@ public:
         }
 
         if (lb.size()>0)
-            big.insert(std::pair<int, vector<vector<Point>>>(idx, lb));
+            big_army_areas.insert(std::pair<int, vector<vector<Point>>>(idx, lb));
 
         int armies = valid_contours.size();
 //        if (armies>0) {
-//            cout << rectified_state_path.substr(54) << " \t   " << armies << endl;
+//            cout << rectified_state_path.substr(29) << " \t   " << armies << endl;
 //            cout << "AREA: " << contourArea(valid_contours[0]) << endl;
 //        }
 
@@ -252,102 +288,75 @@ public:
         show(scene_color);
     }
 
+    void computeAvgArmyArea() {
+        double sum = 0;
+        for (auto area: single_areas) sum += area;
+        avg_army_area = sum / (double) single_areas.size();
+    }
+
+    void updateArmiesCount() {
+        for (const auto &big_army_area: big_army_areas) {
+            for (const auto big_contour: big_army_area.second) {
+                double big_area = contourArea(big_contour);
+                if (big_area>0) {
+                    int armies = (int) round(big_area / avg_army_area);
+                    armies_per_state[big_army_area.first] += armies;
+                }
+            }
+
+        }
+    }
+
+    void count() {
+
+        loadStatesMasksPaths();
+
+        // EXTRACT THE NUMBER OF SINGLE ARMY PER STATE
+        // STACK THE COMPLEX AREA TO BE SPLITTED (according to avg army size)
+        for (int i=0; i<states_path.size(); i++) {
+            armies_per_state.push_back(countArmiesInState(states_path[i], i));
+
+            cout << "                                    \r";
+            cout << "loading ... " << (i+1) << " / " << states_path.size() << "\r" << std::flush;
+
+        }
+        cout << endl;
+
+        // COMPUTE AVERAGE SINGLE ARMY AREA SURFACE
+        computeAvgArmyArea();
+        cout << "average area: " << avg_army_area << endl;
+
+        // UPDATE ARMIES WITH THE BIG ARMIES AREA FOUND (GROUPS OF ARMIES)
+        updateArmiesCount();
+    }
+
+    void print() {
+        cout << endl;
+        for (int i=0; i<states_path.size(); i++) {
+            int armies = armies_per_state[i];
+            if (armies>0)
+                cout << states_path[i].substr(29) << " " << armies << endl;
+        }
+    }
 };
 
-void loadPathNames(std::vector<std::string> &states) {
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_afghanistan.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_africadelnord.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_africadelsud.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_africaorientale.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_alaska.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_alberta.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_americacentrale.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_argentina.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_australiaoccidentale.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_australiaorientale.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_brasile.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_cina.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_cita.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_congo.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_egitto.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_europacentrale.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_europaoccidentale.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_europasettentrionale.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_giappone.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_granbretagna.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_groenlandia.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_india.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_indonesia.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_islanda.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_jacutia.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_kamchatcka.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_madagascar.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_mediooriente.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_mongolia.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_nuovaguinea.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_ontario.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_peru.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_quebec.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_scandinavia.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_siam.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_siberia.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_statiunitioccidentali.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_statiunitiorientali.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_territoridelnordovest.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_ucraina.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_urali.jpg");
-    states.push_back("/home/fusy/Documents/risiko/imgs/state_masks/rect_map_venezuela.jpg");
-}
+
+
 
 int main(int argc, char **argv) {
     std::string rectified_map_path = "/home/fusy/Documents/risiko/imgs/rect_map.jpg";
     std::string scene_path = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110927.jpg";
 //    std::string scene_path = "/home/fusy/Documents/risiko/imgs/IMG_20211214_110912.jpg";
 
-    std::vector<std::string> states;
-    std::vector<int> armies_per_state;
-    loadPathNames(states);
+
 
     System s(rectified_map_path, scene_path);
-//        s.findMapinScene();
 
-    for (int i=0; i<states.size(); i++) {
-//        s.projectState(state);
-        armies_per_state.push_back(s.countArmiesInState(states[i], i));
+    s.count();
 
-        cout << "                                    \r";
-        cout << "loading ... " << (i+1) << " / " << states.size() << "\r" << std::flush;
+    s.print();
 
-    }
-
-
-
-    cout << endl;
-    double sum = 0;
-    for (auto area: s.single_areas) sum += area;
-    double avg = sum / s.single_areas.size();
-    cout << "average area: " << avg << endl;
-
-    for (auto big: s.big) {
-        for (auto big_contour: big.second) {
-            double big_area = contourArea(big_contour);
-            if (big_area>0) {
-                int armies = (int) round(big_area / avg);
-                armies_per_state[big.first] += armies;
-            }
-        }
-
-    }
-
-    cout << endl;
-
-    for (int i=0; i<states.size(); i++) {
-        int armies = armies_per_state[i];
-        if (armies>0)
-            cout << states[i].substr(54) << " " << armies << endl;
-    }
-
-            s.showScene();
+    s.showScene();
 
 
 
